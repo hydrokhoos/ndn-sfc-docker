@@ -10,13 +10,13 @@ services:
       STRATEGY_PREFIXES: "/sfc /content"
       NFD_NEIGHBORS: "nfd2 nfd3"
       NFD_ROUTES: >-
-        /sfc/resize=nfd2:10 /sfc/resize=nfd3:15
-        /svc/resize=nfd2:10 /svc/resize=nfd3:15
-        /sfc/compress=nfd2:100 /sfc/compress=nfd3:5
-        /svc/compress=nfd2:100 /svc/compress=nfd3:5
-        /sfc/filter=nfd2:100 /sfc/filter=nfd3:5
-        /svc/filter=nfd2:100 /svc/filter=nfd3:5
-        /content=nfd2:100 /content=nfd3:5
+        /sfc/resize=nfd2:10 /sfc/resize=nfd3:10
+        /svc/resize=nfd2:10 /svc/resize=nfd3:10
+        /sfc/compress=nfd2:10 /sfc/compress=nfd3:10
+        /svc/compress=nfd2:10 /svc/compress=nfd3:10
+        /sfc/filter=nfd2:10 /sfc/filter=nfd3:10
+        /svc/filter=nfd2:10 /svc/filter=nfd3:10
+        /content=nfd2:10 /content=nfd3:10
     volumes:
       - ./nfd:/app:ro
       - ./nfd/nfd.conf:/usr/local/etc/ndn/nfd.conf:ro
@@ -46,9 +46,9 @@ services:
       STRATEGY_PREFIXES: "/sfc /content"
       NFD_NEIGHBORS: "nfd1 nfd3"
       NFD_ROUTES: >-
-        /sfc/compress=nfd3:5 /svc/compress=nfd3:5
-        /sfc/filter=nfd3:5 /svc/filter=nfd3:5
-        /content=nfd3:5
+        /sfc/compress=nfd3:10 /svc/compress=nfd3:10
+        /sfc/filter=nfd3:10 /svc/filter=nfd3:10
+        /content=nfd3:10
     volumes:
       - ./nfd:/app:ro
       - ./nfd/nfd.conf:/usr/local/etc/ndn/nfd.conf:ro
@@ -131,9 +131,28 @@ services:
     networks:
       - nfd3_apps
 
-  compress:
+  compress_slow:
     image: hydrokhoos/ndn-all:latest
-    container_name: ndn-sfc-cmp-compress
+    container_name: ndn-sfc-cmp-compress-slow
+    depends_on:
+      - nfd2
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+      HOME: /tmp
+      SERVICE_NAME: compress
+      SERVICE_DELAY_MS: ${SLOW_SERVICE_DELAY_MS:-80}
+    volumes:
+      - ./comparison:/app:ro
+    command: >
+      bash -lc "ndnsec key-gen /sfc/compress | ndnsec cert-install - || true;
+      ndnsec key-gen /svc/compress | ndnsec cert-install - || true;
+      exec python3 /app/sfc_service.py"
+    networks:
+      - nfd2_apps
+
+  compress_fast:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-cmp-compress-fast
     depends_on:
       - nfd3
     environment:
@@ -150,9 +169,28 @@ services:
     networks:
       - nfd3_apps
 
-  filter:
+  filter_slow:
     image: hydrokhoos/ndn-all:latest
-    container_name: ndn-sfc-cmp-filter
+    container_name: ndn-sfc-cmp-filter-slow
+    depends_on:
+      - nfd2
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+      HOME: /tmp
+      SERVICE_NAME: filter
+      SERVICE_DELAY_MS: ${SLOW_SERVICE_DELAY_MS:-80}
+    volumes:
+      - ./comparison:/app:ro
+    command: >
+      bash -lc "ndnsec key-gen /sfc/filter | ndnsec cert-install - || true;
+      ndnsec key-gen /svc/filter | ndnsec cert-install - || true;
+      exec python3 /app/sfc_service.py"
+    networks:
+      - nfd2_apps
+
+  filter_fast:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-cmp-filter-fast
     depends_on:
       - nfd3
     environment:
@@ -169,9 +207,27 @@ services:
     networks:
       - nfd3_apps
 
-  content:
+  content_slow:
     image: hydrokhoos/ndn-all:latest
-    container_name: ndn-sfc-cmp-content
+    container_name: ndn-sfc-cmp-content-slow
+    depends_on:
+      - nfd2
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+      HOME: /tmp
+      CONTENT_REPLICA: content-slow
+      CONTENT_DELAY_MS: ${SLOW_CONTENT_DELAY_MS:-80}
+    volumes:
+      - ./comparison:/app:ro
+    command: >
+      bash -lc "ndnsec key-gen /content | ndnsec cert-install - || true;
+      exec python3 /app/content_producer.py"
+    networks:
+      - nfd2_apps
+
+  content_fast:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-cmp-content-fast
     depends_on:
       - nfd3
     environment:
@@ -194,9 +250,12 @@ services:
       - nfd1
       - resize_slow
       - resize_fast
-      - compress
-      - filter
-      - content
+      - compress_slow
+      - compress_fast
+      - filter_slow
+      - filter_fast
+      - content_slow
+      - content_fast
     environment:
       NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
       HOME: /tmp
