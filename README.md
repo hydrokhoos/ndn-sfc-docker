@@ -1,40 +1,44 @@
-# Minimal Docker NDN SFC Experiment
+# Docker による最小 NDN SFC 実験
 
-This repository is a small Docker Compose experiment for NDN Service Function
-Chaining. It keeps the relay idea from
-[hydrokhoos/relayPod-ICSM](https://github.com/hydrokhoos/relayPod-ICSM/tree/main),
-but removes the Kubernetes, sidecar/service split, IPFS pieces, and larger
-framework code so the next experiment is easy to inspect and modify.
+このリポジトリは、NDN Service Function Chaining(SFC) を Docker Compose で小さく試すための実験環境です。
+[hydrokhoos/relayPod-ICSM](https://github.com/hydrokhoos/relayPod-ICSM/tree/main) の relay の考え方を残しつつ、Kubernetes、sidecar/service 分離、IPFS、大きな framework 部分を外し、次の実験を読みやすく変更しやすい形にしています。
 
-## What It Does
+## 基本デモ
 
-The consumer requests:
+consumer は次の Interest を送ります。
 
 ```text
 /relay/sample.txt
 ```
 
-The relay receives the Interest under `/relay`, converts the name to:
+relay は `/relay` 配下の Interest を受け取り、名前を次のように変換します。
 
 ```text
 /sample.txt
 ```
 
-Then it fetches `/sample.txt` from the producer, applies `process_content()`,
-and returns the processed Data to the consumer. The current processing function
-is pass-through, so the expected output is:
+その後、producer から `/sample.txt` を取得し、`process_content()` を適用してから consumer に Data を返します。現在の処理関数は pass-through なので、期待される出力は次の通りです。
 
 ```text
 Hello from NDN producer.
 ```
 
-## Directory Structure
+## ディレクトリ構成
 
 ```text
 .
 ├── README.md
 ├── docker-compose.yaml
 ├── docker-compose.topology.yaml
+├── docker-compose.comparison.yaml
+├── run-sfc-comparison.sh
+├── comparison/
+│   ├── consumer.py
+│   ├── content_producer.py
+│   └── sfc_service.py
+├── nfd-strategy/
+│   ├── Dockerfile
+│   └── strategies/
 ├── nfd/
 │   ├── start.sh
 │   └── nfd.conf
@@ -48,74 +52,61 @@ Hello from NDN producer.
     └── fetch.sh
 ```
 
-## Docker Topology
+## Docker トポロジ
 
-All NDN-related services use:
+NDN 関連のコンテナは基本的に次の image を使います。
 
 ```text
 hydrokhoos/ndn-all:latest
 ```
 
-The Compose file starts one shared NFD container. Producer, relay, and consumer
-connect to that shared forwarder with:
+通常の `docker-compose.yaml` は、1 つの共有 NFD コンテナを起動します。producer、relay、consumer は次の transport でその forwarder に接続します。
 
 ```text
 NDN_CLIENT_TRANSPORT=tcp4://nfd:6363
 ```
 
-The shared NFD uses `nfd/nfd.conf`, mounted at
-`/usr/local/etc/ndn/nfd.conf` and started with `nfd-start`. This configuration
-is based on the upstream NFD sample configuration and changes the demo hub
-behavior explicitly:
+共有 NFD は `nfd/nfd.conf` を `/usr/local/etc/ndn/nfd.conf` に mount し、`nfd-start` で起動します。この設定は upstream NFD の sample 設定を元にしつつ、デモ用に次の点を明示しています。
 
-- TCP listens on port `6363`
-- TCP faces from local and Docker bridge networks are treated as local-scope
-  faces
-- management authorizations and validation use demo-only `any` trust settings
-- `rib.localhop_security` is enabled so Docker containers can register prefixes
-  through the shared NFD hub
-- `auto_prefix_propagate` is omitted because NFD 24.07 does not allow it to be
-  enabled together with `localhop_security`
-- UDP multicast is enabled in the minimal NFD style, although this experiment
-  primarily uses the single TCP hub
+- TCP は port `6363` で listen します。
+- local と Docker bridge network からの TCP face を local-scope face として扱います。
+- management authorization と validation はデモ用の `any` trust 設定を使います。
+- Docker コンテナから共有 NFD hub へ prefix 登録できるように `rib.localhop_security` を有効化します。
+- NFD 24.07 では `localhop_security` と同時に使えないため、`auto_prefix_propagate` は省いています。
+- UDP multicast も最小 NFD 設定に合わせて有効化しています。ただし、この基本デモでは主に単一 TCP hub を使います。
 
-Services:
+サービス構成:
 
-- `nfd`: shared NDN forwarder
-- `producer`: publishes `/sample.txt` with `ndnputchunks`
-- `relay`: Python `NDNApp` registering `/relay`
-- `consumer`: fetches `/relay/sample.txt` with `ndncatchunks -D`
+- `nfd`: 共有 NDN forwarder
+- `producer`: `ndnputchunks` で `/sample.txt` を publish
+- `relay`: Python `NDNApp` で `/relay` を登録
+- `consumer`: `ndncatchunks -D` で `/relay/sample.txt` を fetch
 
-The producer, relay, and consumer do not start their main NDN work immediately.
-They first wait until `nfdc status` succeeds against the shared NFD. The
-consumer also waits until routes for `/sample.txt` and `/relay` are visible in
-the shared FIB before running `ndncatchunks`. It uses `-D` to skip version
-discovery metadata and keep this first relay experiment focused on the explicit
-`/relay/...` to `/...` forwarding rule.
+producer、relay、consumer は、起動直後に本処理を始めません。まず `nfdc status` が成功するまで待ちます。consumer はさらに、共有 FIB に `/sample.txt` と `/relay` の route が見えるまで待ってから `ndncatchunks` を実行します。`-D` は version discovery metadata を省略し、`/relay/...` から `/...` への明示的な relay 動作に絞るために使っています。
 
-## Run
+## 実行方法
 
-From this repository:
+基本デモは、このディレクトリから次のように実行します。
 
 ```sh
 docker compose up --build
 ```
 
-The consumer should print:
+consumer に次の出力が表示されれば成功です。
 
 ```text
 Hello from NDN producer.
 ```
 
-## Multi-NFD Topology Check
+## 複数 NFD トポロジ確認
 
-For a slightly larger static topology, run:
+少し大きい静的トポロジを確認する場合は、次を実行します。
 
 ```sh
 docker compose -f docker-compose.topology.yaml up --build
 ```
 
-This Compose file models the following graph with separate Docker networks:
+この Compose file は、別々の Docker network で次のグラフを表します。
 
 ```mermaid
 flowchart LR
@@ -129,6 +120,8 @@ flowchart LR
   nfd3 --- relay2["relay2"]
 ```
 
+network の対応は次の通りです。
+
 ```text
 [consumer, nfd1]
 [nfd1, nfd2]
@@ -140,76 +133,165 @@ flowchart LR
 [nfd3, relay2]
 ```
 
-It does not run NLSR. Instead, each NFD starts with `nfd/start.sh`, creates UDP
-faces to its NFD neighbors, and installs a small set of static routes:
+この構成では NLSR は使いません。各 NFD は `nfd/start.sh` で起動し、隣接 NFD への UDP face を作り、少数の静的 route を投入します。
 
-- `consumer` connects only to `nfd1`
-- `producer1` publishes `/sample.txt` on `nfd2`
-- `producer2` publishes `/sample.txt` on `nfd3`
-- `relay1` registers `/relay1` on `nfd2` and maps `/relay1/sample.txt` to `/sample.txt`
-- `relay2` registers `/relay2` on `nfd3` and maps `/relay2/sample.txt` to `/sample.txt`
-- `consumer` fetches `/relay1/sample.txt` and `/relay2/sample.txt`
+- `consumer` は `nfd1` のみに接続します。
+- `producer1` は `nfd2` 上で `/sample.txt` を publish します。
+- `producer2` は `nfd3` 上で `/sample.txt` を publish します。
+- `relay1` は `nfd2` 上で `/relay1` を登録し、`/relay1/sample.txt` を `/sample.txt` に変換します。
+- `relay2` は `nfd3` 上で `/relay2` を登録し、`/relay2/sample.txt` を `/sample.txt` に変換します。
+- `consumer` は `/relay1/sample.txt` と `/relay2/sample.txt` を fetch します。
 
-Expected output includes:
+期待される出力には次が含まれます。
 
 ```text
 Hello from producer1.
 Hello from producer2.
 ```
 
-## Name Conversion Rule
+## 名前変換ルール
 
-The conversion is intentionally simple and explicit:
+基本 relay の変換は意図的に単純で明示的です。
 
 ```text
 /relay/sample.txt -> /sample.txt
 /relay/a/b/c     -> /a/b/c
 ```
 
-In the multi-NFD topology, each relay still only removes its own SFC name:
+複数 NFD トポロジでも、それぞれの relay は自分自身の SFC 名だけを外します。
 
 ```text
 /relay1/sample.txt -> /sample.txt
 /relay2/sample.txt -> /sample.txt
 ```
 
-The helper is `strip_relay_prefix()` in `relay/relay.py`.
+この helper は `relay/relay.py` の `strip_relay_prefix()` です。
 
-## Modify The Processing Function
+## 処理関数の変更
 
-Edit `process_content()` in `relay/relay.py`:
+relay の処理を変える場合は、`relay/relay.py` の `process_content()` を編集します。
 
 ```python
 def process_content(data: bytes) -> bytes:
     return data
 ```
 
-For example, a later experiment could transform, compress, filter, or annotate
-the returned bytes there.
+例えば、後続の実験では transform、compress、filter、annotate などの処理をここに入れられます。
 
-## Lightweight Local Checks
+## 軽量ローカル確認
 
-These checks do not require building NFD, ndn-tools, or python-ndn from source:
+NFD、ndn-tools、python-ndn を source build せずに、relay の基本チェックだけを実行できます。
 
 ```sh
 python3 -m py_compile relay/relay.py
 RELAY_SELF_TEST=1 python3 relay/relay.py
 ```
 
-The self-test covers the explicit name conversion rule and basic segmentation
-helper.
+self-test は明示的な名前変換ルールと基本的な segmentation helper を確認します。
 
-## Current Limitations
+## SFC Strategy 比較デモ
 
-- This is a minimal experiment, not a production relay.
-- Relay-side object caching is in memory only.
-- The relay waits to process the complete producer object before serving chunks.
-- The relay serves versionless chunks and does not implement RDR metadata
-  rewriting.
-- Producer Data uses digest signing and does not create a producer identity.
-  The relay still creates a minimal local identity for prefix registration with
-  NFD; returned relay Data is digest signed.
-- The Docker flow assumes `hydrokhoos/ndn-all:latest` provides NFD,
-  `ndnputchunks`, `ndncatchunks`, and Python support for `python-ndn`.
-- Startup ordering uses small shell readiness loops around `nfdc status` and
-  `nfdc fib`, not a full health-check framework.
+比較デモでは、同じ小さな SFC workload を次の 3 つの forwarding strategy で実行します。
+
+- `best-route`
+- `least-pending-interests`
+- `remaining-chain-cost`
+
+測定する指標は、今回の最小デモでは次の 2 つです。
+
+- convergence time
+- response time
+
+対象 scenario は次の 3 つです。
+
+- `content-only`: consumer が `/content/object-<seq>` を直接 fetch します。
+- `single-chain`: consumer が `/sfc/resize/object-<seq>` を fetch します。
+- `deep-chain`: consumer が `/sfc/resize/compress/filter/object-<seq>` を fetch します。
+
+SFC 要求名は、現在の RCC 実装に合わせて次の形式を使います。
+
+```text
+/sfc/<service1>/<service2>/.../<content-id>
+```
+
+例えば deep-chain では次の Interest 名になります。
+
+```text
+/sfc/resize/compress/filter/object-1
+```
+
+この名前は RCC strategy で次の remaining targets として解釈されます。
+
+```text
+/svc/resize
+/svc/compress
+/svc/filter
+/content/object-1
+```
+
+### 比較用トポロジ
+
+比較デモでは、custom NFD image に LPI と RCC strategy を組み込み、`nfd1`、`nfd2`、`nfd3` の全 NFD で同じ strategy を選択できるようにしています。`nfd1` が consumer 側の比較観測点で、`resize` は `nfd2` と `nfd3` に replica を置き、後段 service と content は主に `nfd3` 側に置いています。
+
+```mermaid
+flowchart LR
+  consumer["consumer\nfetch /content/... or /sfc/..."] --- nfd1(("nfd1\nstrategy under test"))
+
+  nfd1 ---|"cost 10\n/sfc/resize, /svc/resize"| nfd2(("nfd2\nstrategy under test"))
+  nfd1 ---|"cost 15\n/sfc/resize, /svc/resize"| nfd3(("nfd3\nstrategy under test"))
+  nfd2 ---|"static route to later targets"| nfd3
+
+  nfd2 --- resizeSlow["resize replica\nslow"]
+  nfd3 --- resizeFast["resize replica\nfast"]
+  nfd3 --- compress["compress service"]
+  nfd3 --- filter["filter service"]
+  nfd3 --- content["content producer\n/content/object-*"]
+
+  nfd1 -. "RCC scores remaining targets\n/svc/* + /content/*" .-> nfd3
+```
+
+route cost は、`single-chain` と `deep-chain` で差が出るように固定しています。先頭 service だけを見ると `nfd2` 側の `/sfc/resize` cost が小さく、残余チェインと最終 content まで見ると `nfd3` 側が有利になる構成です。
+
+- `best-route` は局所的な FIB cost に従い、`nfd2` 側を選びやすくなります。
+- `remaining-chain-cost` は `/svc/...` と `/content/...` の残余チェイン cost を加味し、`nfd3` 側を選びやすくなります。
+- `least-pending-interests` は FIB prefix/Face ごとの pending Interest 数を使います。
+
+全 NFD に RCC を設定した場合でも、RCC はローカル service replica がある NFD では `/sfc/<service>/...` を local face へ handoff します。これにより、`nfd1` では remaining chain cost で次 hop を選び、`nfd3` では同じ RCC strategy が `resize` service app へ渡す、という動作になります。
+
+### 比較の実行
+
+全組み合わせを実行します。
+
+```sh
+./run-sfc-comparison.sh
+```
+
+よく使う調整値は環境変数で指定できます。
+
+```sh
+REQUEST_COUNT=5 RUNS=1 ./run-sfc-comparison.sh
+STRATEGIES="best-route remaining-chain-cost" SCENARIOS="single-chain deep-chain" ./run-sfc-comparison.sh
+```
+
+結果は `comparison-results/<timestamp>/` に保存されます。主な出力は `summary.csv` です。各 run directory には compose log と `nfd1`、`nfd2`、`nfd3` の NFD log も保存されます。
+
+RCC の選択結果は次のように確認できます。
+
+```sh
+grep "remaining-chain-cost selected face" comparison-results/*/*/nfd1.log
+grep "remaining-chain-cost local-service" comparison-results/*/*/nfd3.log
+```
+
+この比較デモは静的 route と application-level SFC relay chain を使います。`discovery completeness` と `load balancing fairness` は今回の最小デモでは計算しません。
+
+## 現在の制限
+
+- これは最小実験環境であり、production relay ではありません。
+- relay 側の object cache は memory 上のみです。
+- relay は producer object 全体を取得してから chunk を返します。
+- relay は versionless chunks を返し、RDR metadata rewriting は実装していません。
+- producer Data は digest signing を使い、producer identity は作りません。relay は NFD への prefix registration 用に最小 local identity を作ります。relay が返す Data も digest signed です。
+- Docker flow は `hydrokhoos/ndn-all:latest` が NFD、`ndnputchunks`、`ndncatchunks`、Python support for `python-ndn` を含むことを前提にしています。
+- 起動順序は `nfdc status` と `nfdc fib` に対する短い readiness loop で扱っており、完全な health-check framework ではありません。
+- RCC は厳密なチェイン全体最短経路探索ではなく、Face 単位の残余チェイン到達 cost による近似です。
+- content prefix は現在の実装では単一 component のみを想定しています。

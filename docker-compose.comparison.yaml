@@ -1,0 +1,217 @@
+services:
+  nfd1:
+    build:
+      context: .
+      dockerfile: nfd-strategy/Dockerfile
+    image: ndn-sfc-nfd-strategies:latest
+    container_name: ndn-sfc-cmp-nfd1
+    environment:
+      STRATEGY_NAME: ${STRATEGY_NAME:-best-route}
+      STRATEGY_PREFIXES: "/sfc /content"
+      NFD_NEIGHBORS: "nfd2 nfd3"
+      NFD_ROUTES: >-
+        /sfc/resize=nfd2:10 /sfc/resize=nfd3:15
+        /svc/resize=nfd2:10 /svc/resize=nfd3:15
+        /sfc/compress=nfd2:100 /sfc/compress=nfd3:5
+        /svc/compress=nfd2:100 /svc/compress=nfd3:5
+        /sfc/filter=nfd2:100 /sfc/filter=nfd3:5
+        /svc/filter=nfd2:100 /svc/filter=nfd3:5
+        /content=nfd2:100 /content=nfd3:5
+    volumes:
+      - ./nfd:/app:ro
+      - ./nfd/nfd.conf:/usr/local/etc/ndn/nfd.conf:ro
+    command: bash /app/start.sh
+    networks:
+      consumer_nfd1:
+        aliases:
+          - nfd
+          - nfd1
+      nfd1_nfd2:
+        aliases:
+          - nfd1
+      nfd1_nfd3:
+        aliases:
+          - nfd1
+
+  nfd2:
+    build:
+      context: .
+      dockerfile: nfd-strategy/Dockerfile
+    image: ndn-sfc-nfd-strategies:latest
+    container_name: ndn-sfc-cmp-nfd2
+    depends_on:
+      - nfd1
+    environment:
+      STRATEGY_NAME: ${STRATEGY_NAME:-best-route}
+      STRATEGY_PREFIXES: "/sfc /content"
+      NFD_NEIGHBORS: "nfd1 nfd3"
+      NFD_ROUTES: >-
+        /sfc/compress=nfd3:5 /svc/compress=nfd3:5
+        /sfc/filter=nfd3:5 /svc/filter=nfd3:5
+        /content=nfd3:5
+    volumes:
+      - ./nfd:/app:ro
+      - ./nfd/nfd.conf:/usr/local/etc/ndn/nfd.conf:ro
+    command: bash /app/start.sh
+    networks:
+      nfd1_nfd2:
+        aliases:
+          - nfd2
+      nfd2_nfd3:
+        aliases:
+          - nfd2
+      nfd2_apps:
+        aliases:
+          - nfd
+          - nfd2
+
+  nfd3:
+    build:
+      context: .
+      dockerfile: nfd-strategy/Dockerfile
+    image: ndn-sfc-nfd-strategies:latest
+    container_name: ndn-sfc-cmp-nfd3
+    depends_on:
+      - nfd1
+    environment:
+      STRATEGY_NAME: ${STRATEGY_NAME:-best-route}
+      STRATEGY_PREFIXES: "/sfc /content"
+      NFD_NEIGHBORS: "nfd1 nfd2"
+    volumes:
+      - ./nfd:/app:ro
+      - ./nfd/nfd.conf:/usr/local/etc/ndn/nfd.conf:ro
+    command: bash /app/start.sh
+    networks:
+      nfd1_nfd3:
+        aliases:
+          - nfd3
+      nfd2_nfd3:
+        aliases:
+          - nfd3
+      nfd3_apps:
+        aliases:
+          - nfd
+          - nfd3
+
+  resize_slow:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-cmp-resize-slow
+    depends_on:
+      - nfd2
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+      HOME: /tmp
+      SERVICE_NAME: resize
+      SERVICE_DELAY_MS: ${SLOW_SERVICE_DELAY_MS:-80}
+    volumes:
+      - ./comparison:/app:ro
+    command: >
+      bash -lc "ndnsec key-gen /sfc/resize | ndnsec cert-install - || true;
+      ndnsec key-gen /svc/resize | ndnsec cert-install - || true;
+      exec python3 /app/sfc_service.py"
+    networks:
+      - nfd2_apps
+
+  resize_fast:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-cmp-resize-fast
+    depends_on:
+      - nfd3
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+      HOME: /tmp
+      SERVICE_NAME: resize
+      SERVICE_DELAY_MS: ${SERVICE_DELAY_MS:-20}
+    volumes:
+      - ./comparison:/app:ro
+    command: >
+      bash -lc "ndnsec key-gen /sfc/resize | ndnsec cert-install - || true;
+      ndnsec key-gen /svc/resize | ndnsec cert-install - || true;
+      exec python3 /app/sfc_service.py"
+    networks:
+      - nfd3_apps
+
+  compress:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-cmp-compress
+    depends_on:
+      - nfd3
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+      HOME: /tmp
+      SERVICE_NAME: compress
+      SERVICE_DELAY_MS: ${SERVICE_DELAY_MS:-20}
+    volumes:
+      - ./comparison:/app:ro
+    command: >
+      bash -lc "ndnsec key-gen /sfc/compress | ndnsec cert-install - || true;
+      ndnsec key-gen /svc/compress | ndnsec cert-install - || true;
+      exec python3 /app/sfc_service.py"
+    networks:
+      - nfd3_apps
+
+  filter:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-cmp-filter
+    depends_on:
+      - nfd3
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+      HOME: /tmp
+      SERVICE_NAME: filter
+      SERVICE_DELAY_MS: ${SERVICE_DELAY_MS:-20}
+    volumes:
+      - ./comparison:/app:ro
+    command: >
+      bash -lc "ndnsec key-gen /sfc/filter | ndnsec cert-install - || true;
+      ndnsec key-gen /svc/filter | ndnsec cert-install - || true;
+      exec python3 /app/sfc_service.py"
+    networks:
+      - nfd3_apps
+
+  content:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-cmp-content
+    depends_on:
+      - nfd3
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+      HOME: /tmp
+      CONTENT_REPLICA: content-fast
+      CONTENT_DELAY_MS: ${CONTENT_DELAY_MS:-10}
+    volumes:
+      - ./comparison:/app:ro
+    command: >
+      bash -lc "ndnsec key-gen /content | ndnsec cert-install - || true;
+      exec python3 /app/content_producer.py"
+    networks:
+      - nfd3_apps
+
+  consumer:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-cmp-consumer
+    depends_on:
+      - nfd1
+      - resize_slow
+      - resize_fast
+      - compress
+      - filter
+      - content
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+      HOME: /tmp
+    volumes:
+      - ./comparison:/app:ro
+    command: >
+      bash -lc "ndnsec key-gen /consumer | ndnsec cert-install - || true;
+      exec tail -f /dev/null"
+    networks:
+      - consumer_nfd1
+
+networks:
+  consumer_nfd1:
+  nfd1_nfd2:
+  nfd1_nfd3:
+  nfd2_nfd3:
+  nfd2_apps:
+  nfd3_apps:
