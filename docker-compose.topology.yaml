@@ -1,0 +1,171 @@
+services:
+  nfd1:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-nfd1
+    environment:
+      NFD_NEIGHBORS: "nfd2 nfd3"
+      NFD_ROUTES: "/relay1=nfd2 /producer1=nfd2 /relay2=nfd3 /producer2=nfd3"
+    volumes:
+      - ./nfd:/app:ro
+      - ./nfd/nfd.conf:/usr/local/etc/ndn/nfd.conf:ro
+    command: bash /app/start.sh
+    networks:
+      consumer_nfd1:
+        aliases:
+          - nfd
+          - nfd1
+      nfd1_nfd2:
+        aliases:
+          - nfd1
+      nfd1_nfd3:
+        aliases:
+          - nfd1
+
+  nfd2:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-nfd2
+    environment:
+      NFD_NEIGHBORS: "nfd1 nfd3"
+      NFD_ROUTES: "/relay2=nfd3 /producer2=nfd3"
+    volumes:
+      - ./nfd:/app:ro
+      - ./nfd/nfd.conf:/usr/local/etc/ndn/nfd.conf:ro
+    command: bash /app/start.sh
+    networks:
+      nfd1_nfd2:
+        aliases:
+          - nfd2
+      nfd2_nfd3:
+        aliases:
+          - nfd2
+      nfd2_producer1:
+        aliases:
+          - nfd
+          - nfd2
+      nfd2_relay1:
+        aliases:
+          - nfd
+          - nfd2
+
+  nfd3:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-nfd3
+    environment:
+      NFD_NEIGHBORS: "nfd1 nfd2"
+      NFD_ROUTES: "/relay1=nfd2 /producer1=nfd2"
+    volumes:
+      - ./nfd:/app:ro
+      - ./nfd/nfd.conf:/usr/local/etc/ndn/nfd.conf:ro
+    command: bash /app/start.sh
+    networks:
+      nfd1_nfd3:
+        aliases:
+          - nfd3
+      nfd2_nfd3:
+        aliases:
+          - nfd3
+      nfd3_producer2:
+        aliases:
+          - nfd
+          - nfd3
+      nfd3_relay2:
+        aliases:
+          - nfd
+          - nfd3
+
+  producer1:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-producer1
+    depends_on:
+      - nfd2
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+      CONTENT_NAME: /producer1/sample.txt
+      CONTENT_TEXT: "Hello from producer1."
+    volumes:
+      - ./producer:/app:ro
+    command: bash /app/start.sh
+    networks:
+      - nfd2_producer1
+
+  producer2:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-producer2
+    depends_on:
+      - nfd3
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+      CONTENT_NAME: /producer2/sample.txt
+      CONTENT_TEXT: "Hello from producer2."
+    volumes:
+      - ./producer:/app:ro
+    command: bash /app/start.sh
+    networks:
+      - nfd3_producer2
+
+  relay1:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-relay1
+    depends_on:
+      - nfd2
+      - producer1
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+      HOME: /tmp
+      RELAY_PREFIX: /relay1
+      RELAY_UPSTREAM_PREFIX: /producer1
+      RELAY_SEGMENT_SIZE: "4096"
+    volumes:
+      - ./relay:/app:ro
+    working_dir: /app
+    command: bash /app/start.sh
+    networks:
+      - nfd2_relay1
+
+  relay2:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-relay2
+    depends_on:
+      - nfd3
+      - producer2
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+      HOME: /tmp
+      RELAY_PREFIX: /relay2
+      RELAY_UPSTREAM_PREFIX: /producer2
+      RELAY_SEGMENT_SIZE: "4096"
+    volumes:
+      - ./relay:/app:ro
+    working_dir: /app
+    command: bash /app/start.sh
+    networks:
+      - nfd3_relay2
+
+  consumer:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-topology-consumer
+    depends_on:
+      - nfd1
+      - producer1
+      - producer2
+      - relay1
+      - relay2
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+      WAIT_PREFIXES: "/relay1 /relay2"
+      CONTENT_NAMES: "/relay1/sample.txt /relay2/sample.txt"
+    volumes:
+      - ./consumer:/app:ro
+    command: bash /app/fetch.sh
+    networks:
+      - consumer_nfd1
+
+networks:
+  consumer_nfd1:
+  nfd1_nfd2:
+  nfd1_nfd3:
+  nfd2_nfd3:
+  nfd2_producer1:
+  nfd3_producer2:
+  nfd2_relay1:
+  nfd3_relay2:

@@ -1,0 +1,50 @@
+services:
+  nfd:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-nfd
+    command: bash /app/start.sh
+    ports:
+      - "6363:6363"
+    volumes:
+      - ./nfd:/app:ro
+      - ./nfd/nfd.conf:/usr/local/etc/ndn/nfd.conf:ro
+
+  producer:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-producer
+    depends_on:
+      - nfd
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+    volumes:
+      - ./producer:/app:ro
+    command: bash /app/start.sh
+
+  relay:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-relay
+    depends_on:
+      - nfd
+      - producer
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+      HOME: /tmp
+      RELAY_PREFIX: /relay
+      RELAY_SEGMENT_SIZE: "4096"
+    volumes:
+      - ./relay:/app:ro
+    working_dir: /app
+    command: bash /app/start.sh
+
+  consumer:
+    image: hydrokhoos/ndn-all:latest
+    container_name: ndn-sfc-consumer
+    depends_on:
+      - nfd
+      - producer
+      - relay
+    environment:
+      NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
+    volumes:
+      - ./consumer:/app:ro
+    command: bash /app/fetch.sh
