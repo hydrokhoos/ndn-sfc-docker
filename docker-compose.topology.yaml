@@ -4,7 +4,7 @@ services:
     container_name: ndn-sfc-nfd1
     environment:
       NFD_NEIGHBORS: "nfd2 nfd3"
-      NFD_ROUTES: "/relay1=nfd2 /producer1=nfd2 /relay2=nfd3 /producer2=nfd3"
+      NFD_ROUTES: "/relay1=nfd2 /relay2=nfd3"
     volumes:
       - ./nfd:/app:ro
       - ./nfd/nfd.conf:/usr/local/etc/ndn/nfd.conf:ro
@@ -26,7 +26,7 @@ services:
     container_name: ndn-sfc-nfd2
     environment:
       NFD_NEIGHBORS: "nfd1 nfd3"
-      NFD_ROUTES: "/relay2=nfd3 /producer2=nfd3"
+      NFD_ROUTES: "/relay2=nfd3"
     volumes:
       - ./nfd:/app:ro
       - ./nfd/nfd.conf:/usr/local/etc/ndn/nfd.conf:ro
@@ -52,7 +52,7 @@ services:
     container_name: ndn-sfc-nfd3
     environment:
       NFD_NEIGHBORS: "nfd1 nfd2"
-      NFD_ROUTES: "/relay1=nfd2 /producer1=nfd2"
+      NFD_ROUTES: "/relay1=nfd2"
     volumes:
       - ./nfd:/app:ro
       - ./nfd/nfd.conf:/usr/local/etc/ndn/nfd.conf:ro
@@ -80,7 +80,7 @@ services:
       - nfd2
     environment:
       NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
-      CONTENT_NAME: /producer1/sample.txt
+      CONTENT_NAME: /sample.txt
       CONTENT_TEXT: "Hello from producer1."
     volumes:
       - ./producer:/app:ro
@@ -95,7 +95,7 @@ services:
       - nfd3
     environment:
       NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
-      CONTENT_NAME: /producer2/sample.txt
+      CONTENT_NAME: /sample.txt
       CONTENT_TEXT: "Hello from producer2."
     volumes:
       - ./producer:/app:ro
@@ -113,7 +113,6 @@ services:
       NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
       HOME: /tmp
       RELAY_PREFIX: /relay1
-      RELAY_UPSTREAM_PREFIX: /producer1
       RELAY_SEGMENT_SIZE: "4096"
     volumes:
       - ./relay:/app:ro
@@ -132,7 +131,6 @@ services:
       NDN_CLIENT_TRANSPORT: tcp4://nfd:6363
       HOME: /tmp
       RELAY_PREFIX: /relay2
-      RELAY_UPSTREAM_PREFIX: /producer2
       RELAY_SEGMENT_SIZE: "4096"
     volumes:
       - ./relay:/app:ro

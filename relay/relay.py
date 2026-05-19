@@ -6,18 +6,13 @@ from typing import Dict, List, Sequence, Tuple
 
 
 RELAY_PREFIX = os.environ.get("RELAY_PREFIX", "/relay")
-RELAY_UPSTREAM_PREFIX = os.environ.get("RELAY_UPSTREAM_PREFIX", "")
 SEGMENT_SIZE = int(os.environ.get("RELAY_SEGMENT_SIZE", "4096"))
 FRESHNESS_PERIOD = int(os.environ.get("RELAY_FRESHNESS_MS", "10000"))
 SEGMENT_COMPONENT_TYPE = 0x32
 
 
-def convert_relay_name(
-    name: str,
-    relay_prefix: str = RELAY_PREFIX,
-    upstream_prefix: str = RELAY_UPSTREAM_PREFIX,
-) -> str:
-    """Convert /relay/a/b/c to /a/b/c, optionally under an upstream prefix."""
+def strip_relay_prefix(name: str, relay_prefix: str = RELAY_PREFIX) -> str:
+    """Convert /relay/a/b/c to /a/b/c."""
     normalized_name = "/" + name.strip("/")
     normalized_prefix = "/" + relay_prefix.strip("/")
 
@@ -27,13 +22,7 @@ def convert_relay_name(
         raise ValueError(f"Interest {normalized_name} is outside relay prefix {normalized_prefix}")
 
     suffix = normalized_name[len(normalized_prefix):]
-    if not upstream_prefix:
-        return suffix or "/"
-    return "/" + "/".join(part.strip("/") for part in (upstream_prefix, suffix) if part.strip("/"))
-
-
-def strip_relay_prefix(name: str, relay_prefix: str = RELAY_PREFIX) -> str:
-    return convert_relay_name(name, relay_prefix, "")
+    return suffix or "/"
 
 
 def process_content(data: bytes) -> bytes:
@@ -49,7 +38,7 @@ def chunk_bytes(data: bytes, segment_size: int = SEGMENT_SIZE) -> List[bytes]:
 def _run_self_test() -> None:
     assert strip_relay_prefix("/relay/sample.txt") == "/sample.txt"
     assert strip_relay_prefix("/relay/a/b/c") == "/a/b/c"
-    assert convert_relay_name("/relay1/sample.txt", "/relay1", "/producer1") == "/producer1/sample.txt"
+    assert strip_relay_prefix("/relay1/sample.txt", "/relay1") == "/sample.txt"
     assert chunk_bytes(b"abcdef", 2) == [b"ab", b"cd", b"ef"]
     print("relay.py self-test passed")
 
@@ -133,7 +122,7 @@ def run_relay() -> None:
         if cached is not None:
             return cached
 
-        producer_name = convert_relay_name(Name.to_str(relay_base_name))
+        producer_name = strip_relay_prefix(Name.to_str(relay_base_name))
         print(f"Fetching {producer_name} for {Name.to_str(relay_base_name)}", flush=True)
         producer_content = await fetch_producer_content(producer_name)
         processed = process_content(producer_content)

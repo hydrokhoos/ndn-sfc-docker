@@ -119,9 +119,9 @@ This Compose file models the following graph with separate Docker networks:
 
 ```mermaid
 flowchart LR
-  consumer["consumer"] --- nfd1["nfd1"]
-  nfd1 --- nfd2["nfd2"]
-  nfd1 --- nfd3["nfd3"]
+  consumer["consumer"] --- nfd1(("nfd1"))
+  nfd1 --- nfd2(("nfd2"))
+  nfd1 --- nfd3(("nfd3"))
   nfd2 --- nfd3
   nfd2 --- producer1["producer1"]
   nfd3 --- producer2["producer2"]
@@ -144,10 +144,10 @@ It does not run NLSR. Instead, each NFD starts with `nfd/start.sh`, creates UDP
 faces to its NFD neighbors, and installs a small set of static routes:
 
 - `consumer` connects only to `nfd1`
-- `producer1` publishes `/producer1/sample.txt` on `nfd2`
-- `producer2` publishes `/producer2/sample.txt` on `nfd3`
-- `relay1` registers `/relay1` on `nfd2` and maps to `/producer1`
-- `relay2` registers `/relay2` on `nfd3` and maps to `/producer2`
+- `producer1` publishes `/sample.txt` on `nfd2`
+- `producer2` publishes `/sample.txt` on `nfd3`
+- `relay1` registers `/relay1` on `nfd2` and maps `/relay1/sample.txt` to `/sample.txt`
+- `relay2` registers `/relay2` on `nfd3` and maps `/relay2/sample.txt` to `/sample.txt`
 - `consumer` fetches `/relay1/sample.txt` and `/relay2/sample.txt`
 
 Expected output includes:
@@ -166,12 +166,11 @@ The conversion is intentionally simple and explicit:
 /relay/a/b/c     -> /a/b/c
 ```
 
-In the multi-NFD topology, `RELAY_UPSTREAM_PREFIX` is used to keep each relay
-attached to its producer namespace:
+In the multi-NFD topology, each relay still only removes its own SFC name:
 
 ```text
-/relay1/sample.txt -> /producer1/sample.txt
-/relay2/sample.txt -> /producer2/sample.txt
+/relay1/sample.txt -> /sample.txt
+/relay2/sample.txt -> /sample.txt
 ```
 
 The helper is `strip_relay_prefix()` in `relay/relay.py`.
